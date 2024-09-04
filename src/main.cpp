@@ -10,7 +10,7 @@
 #define AUTH 8
 #define TOUCH 4
 
-// config
+// configw
 IRrecv irrecv(7);
 decode_results results;
 Servo servo;
@@ -20,12 +20,13 @@ uint32_t codes[] = {
     16728765, 16730805, 16732845};
 
 // values states
-const int startPos = 170, endPos = 72;
-int turnMode = 0, ledMode = 1, systemMode = 0;
+const int startPos = 170, endPos = 68;
+int turnMode = 0, ledMode = 0, systemMode = 0;
 int servoPos = 0, increment = 1;
 int password[] = {1, 2, 3, 4};
 int userPass[4] = {-1};
 int passTrack = 0;
+int systemState = LOW;
 
 // led blink
 unsigned long prevMillis = 0;
@@ -72,30 +73,56 @@ void loop()
 
   if (irrecv.decode(&results))
   {
-    processCode(results.value);
+    if (results.value == 16769055)
+    {
+      systemState = LOW;
+      digitalWrite(AUTH, LOW);
+      digitalWrite(ACCESS, LOW);
+      digitalWrite(DENIED, LOW);
+      auth = false;
+      ledMode = 0;
+      resetPassword();
+    }
+    else if (results.value == 16754775)
+    {
+      systemState = HIGH;
+      ledMode = 1;
+      digitalWrite(AUTH, HIGH);
+      digitalWrite(ACCESS, LOW);
+      digitalWrite(DENIED, LOW);
+    }
+
+    if (systemState == HIGH)
+    {
+      processCode(results.value);
+    }
     irrecv.resume();
   }
 
-  if (systemMode == 1)
+  if (systemState == HIGH)
   {
-    digitalWrite(AUTH, HIGH);
-    digitalWrite(ACCESS, LOW);
-    digitalWrite(DENIED, LOW);
-  }
-  else
-  {
-    if (auth)
+    if (systemMode == 1)
     {
-      pirState = (systemMode == 0) ? digitalRead(PIR_PIN) : LOW;
-      touchState = (systemMode == 3) ? digitalRead(TOUCH) : LOW;
-      trackMotionState();
-      trackMotion();
-      trackMotionLed();
+      digitalWrite(AUTH, HIGH);
+      digitalWrite(ACCESS, LOW);
+      digitalWrite(DENIED, LOW);
     }
     else
     {
-      digitalWrite(ACCESS, LOW);
-      digitalWrite(DENIED, HIGH);
+      if (auth)
+      {
+        pirState = (systemMode == 0) ? digitalRead(PIR_PIN) : LOW;
+        touchState = (systemMode == 3) ? digitalRead(TOUCH) : LOW;
+        trackMotionState();
+        trackMotion();
+        trackMotionLed();
+      }
+      else
+      {
+        digitalWrite(ACCESS, LOW);
+        digitalWrite(DENIED, HIGH);
+        digitalWrite(AUTH, LOW);
+      }
     }
   }
 
@@ -112,6 +139,7 @@ void trackMotionLed()
     {
       digitalWrite(ACCESS, HIGH);
       digitalWrite(DENIED, LOW);
+      digitalWrite(AUTH, LOW);
     }
     else
     {
@@ -119,9 +147,11 @@ void trackMotionLed()
       {
         digitalWrite(AUTH, HIGH);
         digitalWrite(DENIED, HIGH);
+        digitalWrite(ACCESS, LOW);
       }
       else
       {
+        digitalWrite(AUTH, LOW);
         digitalWrite(ACCESS, LOW);
         digitalWrite(DENIED, HIGH);
       }
@@ -129,10 +159,12 @@ void trackMotionLed()
     break;
   case 1:
     digitalWrite(ACCESS, LOW);
+    digitalWrite(AUTH, LOW);
     digitalWrite(DENIED, HIGH);
     break;
   case 2:
     digitalWrite(ACCESS, HIGH);
+    digitalWrite(AUTH, LOW);
     digitalWrite(DENIED, HIGH);
     break;
   default:
