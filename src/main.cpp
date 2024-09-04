@@ -1,4 +1,3 @@
-
 #include <Arduino.h>
 #include <Servo.h>
 #include <IRremote.h>
@@ -9,6 +8,7 @@
 #define ACCESS 11
 #define DENIED 10
 #define AUTH 8
+#define TOUCH 4
 
 // config
 IRrecv irrecv(7);
@@ -22,16 +22,20 @@ uint32_t codes[] = {
 // values states
 const int startPos = 170, endPos = 72;
 int turnMode = 0, ledMode = 1, systemMode = 0;
-int servoPos = 0, increment = 1, pirState = 0;
+int servoPos = 0, increment = 1;
 int password[] = {1, 2, 3, 4};
 int userPass[4] = {-1};
 int passTrack = 0;
+
+// led blink
 unsigned long prevMillis = 0;
 long interval = 1000;
 int ledState = LOW;
+int touchState = LOW;
+int pirState = LOW;
 
 // conditinal states
-long doorOpen = 0;
+unsigned long doorOpen = 0;
 bool opening = false, opened = false, closing = false;
 bool auth = false;
 
@@ -53,13 +57,11 @@ void setup()
   pinMode(ACCESS, OUTPUT);
   pinMode(DENIED, OUTPUT);
   pinMode(AUTH, OUTPUT);
-  servo.attach(9);
+  pinMode(TOUCH, INPUT);
+
   irrecv.enableIRIn();
-  for (int i = servo.read(); i > startPos || i < startPos;)
-  {
-    servo.write((i > startPos) ? --i : ++i);
-    delay(15);
-  }
+  servo.write(startPos);
+  servo.attach(9);
   Serial.begin(9600);
 }
 
@@ -84,10 +86,8 @@ void loop()
   {
     if (auth)
     {
-      if (systemMode == 0)
-      {
-        pirState = digitalRead(PIR_PIN);
-      }
+      pirState = (systemMode == 0) ? digitalRead(PIR_PIN) : LOW;
+      touchState = (systemMode == 3) ? digitalRead(TOUCH) : LOW;
       trackMotionState();
       trackMotion();
       trackMotionLed();
@@ -115,8 +115,16 @@ void trackMotionLed()
     }
     else
     {
-      digitalWrite(ACCESS, LOW);
-      digitalWrite(DENIED, HIGH);
+      if (systemMode == 3)
+      {
+        digitalWrite(AUTH, HIGH);
+        digitalWrite(DENIED, HIGH);
+      }
+      else
+      {
+        digitalWrite(ACCESS, LOW);
+        digitalWrite(DENIED, HIGH);
+      }
     }
     break;
   case 1:
@@ -165,19 +173,19 @@ void trackMotion()
 
 void trackMotionState()
 {
-  if (pirState == HIGH)
+  if (pirState == HIGH || touchState == HIGH)
   {
     digitalWrite(MONITOR, HIGH);
-    turnMode = 1;
+    turnMode = 2;
     doorOpen = millis();
     opening = true;
   }
   else
   {
-    if (millis() - doorOpen > 5000 && opening)
+    if (millis() - doorOpen >= 5000 && opening)
     {
       digitalWrite(MONITOR, LOW);
-      turnMode = 2;
+      turnMode = 1;
       opening = false;
     }
   }
@@ -194,7 +202,7 @@ void trackLed()
     digitalWrite(MONITOR, HIGH);
     break;
   case 2:
-    BlinkInterval(1000, MONITOR);
+    BlinkInterval(interval, MONITOR);
     break;
   default:
     break;
@@ -278,6 +286,12 @@ void processCode(uint32_t code)
   {
     switch (code)
     {
+    case 16761405:
+      if (auth)
+      {
+        ledMode = 0;
+        systemMode = 3;
+      }
     case 16753245:
       if (auth)
       {
@@ -324,22 +338,57 @@ void processCode(uint32_t code)
       break;
     }
   }
+  else if (systemMode == 3)
+  {
+    switch (code)
+    {
+    case 16736925:
+      Serial.println("Checking state: ");
+      Serial.println(servo.read());
+      break;
+    case 16750695:
+      if (!auth)
+      {
+        systemMode = 1;
+        Serial.println("Mode 1");
+      }
+      break;
+    case 16720605:
+      if (auth)
+      {
+        ledMode = 2;
+        systemMode = 0;
+      }
+      break;
+    case 16712445:
+      if (auth)
+      {
+        ledMode = 0;
+        systemMode = 2;
+      }
+      break;
+    case 16756815:
+      ledMode = 1;
+      auth = false;
+      resetPassword();
+      Serial.println("Unauthenticate");
+      break;
+    default:
+      Serial.println("I dont understand you");
+      break;
+    }
+  }
   else
   {
     switch (code)
     {
-    // case 16753245:
-    //   turnMode = 1;
-    //   Serial.println("Turning Left");
-    //   break;
-    // case 16769565:
-    //   turnMode = 2;
-    //   Serial.println("Turning Right");
-    //   break;
-    // case 16748655:
-    //   turnMode = 0;
-    //   Serial.println("Stable Now");
-    //   break;
+    case 16761405:
+      if (auth)
+      {
+        ledMode = 0;
+        systemMode = 3;
+      }
+      break;
     case 16736925:
       Serial.println("Checking state: ");
       Serial.println(servo.read());
